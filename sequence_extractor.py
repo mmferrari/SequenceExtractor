@@ -7,6 +7,8 @@ import zipfile
 
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support.wait import WebDriverWait
 from webdriverdownloader import GeckoDriverDownloader
 
 """
@@ -46,9 +48,10 @@ class SequenceExtractor:
     def get_args(cls):
         parser = argparse.ArgumentParser(description='Extract subsequence')
         parser.add_argument('-i', '--input-file', metavar='INPUT_FILE', type=str, required=True,
-                            help='File containing DNA sequence info with coordinates in BED format', default=None)
+                            help='File containing DNA sequence info with coordinates in BED format (0-based exclusive)',
+                            default=None)
         parser.add_argument('-o', '--output-file', metavar='OUTPUT_FILE', type=str, required=True,
-                            help='Output file with coordinates in BED format', default='output.fa')
+                            help='Output file with coordinates in 1-based inclusive system', default='output.fa')
         parser.add_argument('-f', '--input-file-format', metavar='INPUT_FILE_FORMAT', type=str, required=True,
                             choices=('fasta', 'tsv'), help='Input file format', default='tsv')
         parser.add_argument('-min', '--min-length', metavar='MIN_LENGTH', type=int, required=False,
@@ -135,26 +138,49 @@ class SequenceExtractor:
 
     @classmethod
     def __download_sequence(cls, seq_name, folder):
-        if not os.path.isfile(seq_name + '.zip') and not os.path.isfile(seq_name + '_sequence.fasta'):
+        if not os.path.isfile(os.path.abspath(os.path.join(folder, seq_name + '.zip'))) and \
+                not os.path.isfile(os.path.abspath(os.path.join(folder, seq_name + '_sequences.fasta'))):
             cls.__init_browser(folder)
+            wait = WebDriverWait(cls.__BROWSER, 30)
             cls.__BROWSER.get('https://knot.math.usf.edu/mds_ies_db/search.php?q=' + seq_name)
 
-            if seq_name not in cls.__BROWSER.title:
+            # if seq_name not in cls.__BROWSER.title:
+            #     raise AssertionError('')
+
+            elem = cls.__BROWSER.find_element_by_id('downloadList')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+            elem = cls.__BROWSER.find_element_by_xpath(
+                '//button[@type="button" and @data-toggle="dropdown" and @data-id="download-select"]')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+            elem = cls.__BROWSER.find_element_by_xpath('//span[text()="' + seq_name + '"]')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+            elem = cls.__BROWSER.find_element_by_xpath(
+                '//button[@type="button" and @data-toggle="dropdown" and @data-id="download-select"]')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+            elem = cls.__BROWSER.find_element_by_id('deselectAll_btn')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+            elem = cls.__BROWSER.find_element_by_name('seq_nuc')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+            elem = cls.__BROWSER.find_element_by_xpath(
+                '//input[@type="radio" and @name="seq_type" and @value="fasta"]')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+            elem = cls.__BROWSER.find_element_by_id('downloadBtn')
+            wait.until(expected_conditions.visibility_of(elem))
+            elem.click()
+
+        if not os.path.isfile(os.path.abspath(os.path.join(folder, seq_name + '_sequences.fasta'))):
+            if not os.path.isfile(os.path.abspath(os.path.join(folder, seq_name + '.zip'))):
                 raise AssertionError('')
 
-            cls.__BROWSER.find_element_by_id('downloadList').click()
-            cls.__BROWSER.find_element_by_id('deselectAll_btn').click()
-            cls.__BROWSER.find_element_by_name('seq_nuc').click()
-            cls.__BROWSER.find_element_by_xpath(
-                '//input[@type="radio" and @name="seq_type" and @value="fasta"]').click()
-            cls.__BROWSER.find_element_by_id('downloadBtn').click()
-
-        if not os.path.isfile(seq_name + '_sequences.fasta'):
-            if not os.path.isfile(seq_name + '.zip'):
-                raise AssertionError('')
-
-            with zipfile.ZipFile(seq_name + '.zip', 'r') as zip_ref:
-                zip_ref.extractall(os.path.abspath(folder))
+            with zipfile.ZipFile(os.path.abspath(os.path.join(folder, seq_name + '.zip')), 'r') as fin:
+                fin.extractall(os.path.abspath(folder))
 
         seq = ''
         with open(os.path.join(os.path.abspath(folder), seq_name + '_sequences.fasta'), 'r') as fin:
@@ -174,6 +200,7 @@ class SequenceExtractor:
     @classmethod
     def extract_sequences(cls, in_file, input_format='fasta', prefix_len=0, suffix_len=0, min_len=1, max_len=1000,
                           folder='.', out_file='output.fa'):
+        names = list()
         first_save = True
 
         with open(in_file, 'r') as fin:
@@ -202,15 +229,24 @@ class SequenceExtractor:
                 first_save = False
 
                 with open(out_file, open_mode) as fout:
-                    fout.write('>' + name + ' range=' + name + ':' + str(start) + '-' + str(end) +
-                               ' 5\'pad = 0 3\'pad=0 strand=+ repeatMasking=none\n')
+                    tmp_name = name
+                    if tmp_name in names:
+                        i = 1
+                        tmp_name = name + '-' + str(i)
+                        while tmp_name in names:
+                            i += 1
+                            tmp_name = name + '-' + str(i)
+                    names.append(tmp_name)
+                    fout.write('>' + tmp_name + ' range=' + tmp_name + ':' + str(start + 1) + '-' + str(end) +
+                               ' 5\'pad=0 3\'pad=0 strand=+ repeatMasking=none\n')
                     fout.write(subseq + '\n')
-                    fout.write('>' + name + '_rev_compl' + ' range=' + name + '_rev_compl' + ':' +
-                               str(len(seq) - end - 1) + '-' + str(len(seq) - start - 1) +
-                               ' 5\'pad = 0 3\'pad=0 strand=+ repeatMasking=none\n')
+                    fout.write('>' + tmp_name + '_rev_compl' + ' range=' + tmp_name + '_rev_compl' + ':' +
+                               str(len(seq) - end + 1) + '-' + str(len(seq) - start) +
+                               ' 5\'pad=0 3\'pad=0 strand=+ repeatMasking=none\n')
                     fout.write(subseq_rev_compl + '\n')
 
                 line = fin.readline()
+        cls.__destroy_browser()
 
 
 if __name__ == '__main__':
