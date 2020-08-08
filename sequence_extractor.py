@@ -118,13 +118,13 @@ class SequenceExtractor:
             parts = line.split('\t')
 
             if len(parts) < 3:
-                raise AssertionError('')
+                raise AssertionError('Too few column in input file')
 
             name = parts[0]
             start = int(parts[1]) - prefix_len
             end = int(parts[2]) + suffix_len
         else:
-            raise AssertionError('')
+            raise AssertionError('Unknown format')
 
         seq = cls.__download_sequence(name, folder)
 
@@ -145,7 +145,7 @@ class SequenceExtractor:
             cls.__BROWSER.get('https://knot.math.usf.edu/mds_ies_db/search.php?q=' + seq_name)
 
             # if seq_name not in cls.__BROWSER.title:
-            #     raise AssertionError('')
+            #     raise AssertionError('Cannot load webpage')
 
             elem = cls.__BROWSER.find_element_by_id('downloadList')
             wait.until(expected_conditions.visibility_of(elem))
@@ -177,7 +177,7 @@ class SequenceExtractor:
 
         if not os.path.isfile(os.path.abspath(os.path.join(folder, seq_name + '_sequences.fasta'))):
             if not os.path.isfile(os.path.abspath(os.path.join(folder, seq_name + '.zip'))):
-                raise AssertionError('')
+                raise AssertionError('Cannot find zip file containing fasta sequences')
 
             with zipfile.ZipFile(os.path.abspath(os.path.join(folder, seq_name + '.zip')), 'r') as fin:
                 fin.extractall(os.path.abspath(folder))
@@ -193,7 +193,7 @@ class SequenceExtractor:
                 seq_part = fin.readline()
 
         if len(seq) < 1:
-            raise AssertionError('')
+            raise AssertionError('No sequence found')
 
         return seq
 
